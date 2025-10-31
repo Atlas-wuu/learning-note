@@ -28,3 +28,25 @@ TID2013数据集包含了从25个参考图中获得的3000多张测试图像，�
 KonIQ-10k 数据集是一个生态有效的大规模图像质量评估数据集，包含了 10,000 张自然图像，每张图像都经过多人评分，提供了丰富的标注信息。这个数据集的多样性和高质量标注使其成为训练 IQA 模型的理想选择。
 
 **下载链接：** https://osf.io/hcsdy/files
+
+## 算法
+### aesthetic-predictor-v2-5-2024
+**介绍：** 基于SigLIP的预期器， 评分范围从1-10
+
+**github：** https://github.com/discus0434/aesthetic-predictor-v2-5
+
+### improved-aesthetic-predictor-2022
+**介绍：** 基于CLIP+MLP进行图像质量评估，
+
+**github：** https://github.com/christophschuhmann/improved-aesthetic-predictor
+
+### simple-aesthetics-predictor-2023
+**介绍：** 基于CLIP进行图像质量评估
+
+**github：** https://github.com/shunk031/simple-aesthetics-predictor
+
+### VisualQuality-R1-NeurIPS 2025
+**介绍：** 基于Qwen2.5-VL-7B-Instruct模型在3个数据集KADID-10K, TID2013, KonIQ-10k上finetuen而来
+
+**github：** https://github.com/TianheWu/VisualQuality-R1?tab=readme-ov-file
+
