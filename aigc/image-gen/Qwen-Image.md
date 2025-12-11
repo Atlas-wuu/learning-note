@@ -1,13 +1,21 @@
 # Qwen-Image
 ## 介绍
 Qwen-Image模型架构如图6，基于3个核心部件：MLLM用作条件编码器，VAE用于压缩输入图至隐空间，MMDiT作为backbone扩散模型，建模噪声和图像隐变量之间基于文本引导的复杂联合分布。
+其中MMDiT参数如下，参数量：20B：
+"attention_head_dim": 128,
+"in_channels": 64,
+"joint_attention_dim": 3584,
+"num_attention_heads": 24,
+"num_layers": 60,
+"out_channels": 16,
+"pooled_projection_dim": 768
 
 ## 推理过程
 推理过程步骤如下：
 1. 使用Qwen2_5_VLForConditionalGeneration对prompt进行文本编码，如果存在negative_prompt，同时进行编码。prompt_embeds为(batch_size, l, 3584);
 2. 随机采样生成隐变量，shape为(batch_size, 1, 16, height//8, width//8)，pack为(batch_size, height//16 * width//16，64)。其中height、width为RGB图像尺寸
 3. 准备timesteps。范围（0-1）*num_train_timesteps（通常取1000），共num_inference_steps个值（通常取50），**其中未使用均匀分布，而是基于均匀分布进行指数偏移，使得在近数据端进行密集采样，提升图像质量**
-4. 逐个timestep通过transformer预测向量场。输入transformer包括隐变量、prompt编码、timestep / 1000，依据向量场及xt（即输入隐向量）计算x(t-1)，以此替换隐向量再次输入transfomer预测向量场，逐次迭代，直至预测到x0。若存在negative_prompt，则同样预测向量场与promt向量场融合作为最终向量场。
+4. 逐个timestep通过transformer预测向量场。输入transformer包括隐变量、prompt编码、timestep / 1000，依据向量场及xt（即输入隐向量）计算x(t-1)，prev_sample = sample + dt * model_output，dt = sigma_next - sigma，以此替换隐向量再次输入transfomer预测向量场，逐次迭代，直至预测到x0。若存在negative_prompt，则同样预测向量场与promt向量场融合作为最终向量场。
 5. 最终隐向量进行unpack，转为(batch_size, 1, 16, height//8, width//8)，经过vae解码为图像。
 
 ```python
@@ -1579,7 +1587,8 @@ Qwen-Image使用MMDiT，这种结构已经在FLUX及Seedream系列验证有效�
 1.文本特征（batch_size, l, 3584）经过RMSNorm归一化后，经过txt_in（线性层）维度由3584映射到24*128=3072维
 2.图像特征(batch_size, (height//16) * (width//16)，64)，经过img_in（线性层）维度由64映射到24*128=3072维
 3.通过QwenEmbedRope获取位置编码mm-rope，见论文图8-c
-4.将上述1、2、3及time embedding迭代输入60个QwenImageTransformerBlock，如图6所示，输出维度为(batch_size, (height//16) * (width//16)，64)。
+4.通过MLP获取时间编码time embedding
+5.将上述1、2、3及time embedding迭代输入60个QwenImageTransformerBlock，如图6所示，输出维度为(batch_size, (height//16) * (width//16)，64)。
 
 
 ```python
