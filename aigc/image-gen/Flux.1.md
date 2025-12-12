@@ -2,7 +2,7 @@
 ## 介绍
 Flux.1-dev是Black Forest Labs在2024年开源的文生图模型。
 主要基于3个核心部件：
-文本编码器：用于将文本编码为条件向量。flux.1使用还能两个文本编码器：openai/clip-vit-large-patch14、google/t5-v1_1-xxl
+文本编码器：用于将文本编码为条件向量。flux.1使用两个文本编码器：openai/clip-vit-large-patch14、google/t5-v1_1-xxl
 VAE：用于压缩输入图至隐空间及解码到像素空间
 DiT：建模噪声和图像隐变量之间基于文本引导的复杂联合分布。
 其中DiT参数如下，参数量12B：
@@ -1449,69 +1449,25 @@ class FluxTransformer2DModel(
 
 ```
 
-# Qwen-Image-Edit
-图像编辑如论文图14，
-与Qwen-Image不同如下：
-1. 获取文字embed方式。如论文图15，依据图像及指令通过Qwen2.5-VL生成文字
-2. transformer输入为随机噪声与原图经过vae后进行concat的结果。latent_model_input = torch.cat([latents, image_latents], dim=1)
-3. 位置编码。对于transfomer输出选取top作为latents。noise_pred = noise_pred[:, : latents.size(1)]
+# FLUX.1-Kontext-dev
+## 介绍
+FLUX.1-Kontext-dev是Black Forest Labs在2025年开源的图像编辑模型
+主要基于3个核心部件，与Flux.1-dev一致
+文本编码器：用于将文本编码为条件向量。flux.1使用两个文本编码器：openai/clip-vit-large-patch14、google/t5-v1_1-xxl
+VAE：用于压缩输入图至隐空间及解码到像素空间
+DiT：建模噪声和图像隐变量之间基于文本引导的复杂联合分布。
+其中DiT参数如下，参数量12B：
+"attention_head_dim": 128,
+"in_channels": 64,
+"joint_attention_dim": 4096,
+"num_attention_heads": 24,
+"num_layers": 19,
+"num_single_layers": 38,
+"pooled_projection_dim": 768
 
-
-```python
-    def _get_qwen_prompt_embeds(
-        self,
-        prompt: Union[str, List[str]] = None,
-        image: Optional[torch.Tensor] = None,
-        device: Optional[torch.device] = None,
-        dtype: Optional[torch.dtype] = None,
-    ):
-        device = device or self._execution_device
-        dtype = dtype or self.text_encoder.dtype
-
-        prompt = [prompt] if isinstance(prompt, str) else prompt
-        img_prompt_template = "Picture {}: <|vision_start|><|image_pad|><|vision_end|>"
-        if isinstance(image, list):
-            base_img_prompt = ""
-            for i, img in enumerate(image):
-                base_img_prompt += img_prompt_template.format(i + 1)
-        elif image is not None:
-            base_img_prompt = img_prompt_template.format(1)
-        else:
-            base_img_prompt = ""
-
-        template = self.prompt_template_encode
-
-        drop_idx = self.prompt_template_encode_start_idx
-        txt = [template.format(base_img_prompt + e) for e in prompt]
-
-        model_inputs = self.processor(
-            text=txt,
-            images=image,
-            padding=True,
-            return_tensors="pt",
-        ).to(device)
-
-        outputs = self.text_encoder(
-            input_ids=model_inputs.input_ids,
-            attention_mask=model_inputs.attention_mask,
-            pixel_values=model_inputs.pixel_values,
-            image_grid_thw=model_inputs.image_grid_thw,
-            output_hidden_states=True,
-        )
-
-        hidden_states = outputs.hidden_states[-1]
-        split_hidden_states = self._extract_masked_hidden(hidden_states, model_inputs.attention_mask)
-        split_hidden_states = [e[drop_idx:] for e in split_hidden_states]
-        attn_mask_list = [torch.ones(e.size(0), dtype=torch.long, device=e.device) for e in split_hidden_states]
-        max_seq_len = max([e.size(0) for e in split_hidden_states])
-        prompt_embeds = torch.stack(
-            [torch.cat([u, u.new_zeros(max_seq_len - u.size(0), u.size(1))]) for u in split_hidden_states]
-        )
-        encoder_attention_mask = torch.stack(
-            [torch.cat([u, u.new_zeros(max_seq_len - u.size(0))]) for u in attn_mask_list]
-        )
-
-        prompt_embeds = prompt_embeds.to(dtype=dtype, device=device)
-
-        return prompt_embeds, encoder_attention_mask
-```
+## 推理过程
+推理过程与Flux.1-dev推理过程大部分一致，主要区别如下：
+1. 输入图经过VAE编码为image_latents，shape为(batch_size, 16, height//8, width//8)，pack为(batch_size, height//16 * width//16，64)。其中height、width为RGB图像尺寸；
+2. 与latent_image_ids类似生成image_ids，shape为((height//16) * (width//16)，3)，两者concat为latent_ids
+3. 将image_latents与latents concat后作为latent_model_input输入transformer预测向量场，但仅选取top作为向量场，noise_pred = noise_pred[:, : latents.size(1)]
+进而计算x(t-1)，prev_sample = sample + dt * model_output，dt = sigma_next - sigma，以此替换隐向量再次输入transfomer预测向量场，逐次迭代，直至预测到x0
